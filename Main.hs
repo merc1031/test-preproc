@@ -7,7 +7,7 @@ import Control.Monad (liftM)
 import Data.List (isSuffixOf, stripPrefix, intercalate)
 import System.Environment (getArgs)
 import Text.InterpolatedString.Perl6 (qc, qq)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), liftA2)
 import Data.List.Split (splitOn)
 import Data.Maybe (mapMaybe)
 
@@ -21,11 +21,15 @@ doMain args = do
         input = args !! 1
         out = args !! 2
         tests = findTests
-    content <- fmap testFile tests
+        specs = findSpecs
+    content <- liftA2 testFile tests specs
     writeFile "/tmp/test-preproc" content
     writeFile out content
 
-findTests = find always ((isSuffixOf "Test.hs") `liftM` fileName) "tests"
+findTests = findB "Test.hs"
+findSpecs = findB "Spec.hs"
+
+findB suff = find always ((isSuffixOf suff) `liftM` fileName) "tests"
 
 dropDir :: String -> Maybe String
 dropDir = stripPrefix "tests/"
@@ -39,8 +43,13 @@ noSlash = replace "/" "."
 putTogether :: String -> String
 putTogether = ("import qualified " ++)
 
-createTest :: String -> String
-createTest = ((flip (++)) ".tests")
+createTest :: String -> (String -> String) -> String -> String
+createTest mainIs xform = xform . ((flip (++)) mainIs)
+
+specToTasty :: String -> String
+specToTasty testRow = "( " ++ "HSpec.testSpec " ++ name ++ " " ++ testRow ++ " )"
+  where
+    name = "\"" ++ noExts testRow ++ "\""
 
 importTests :: [String] -> [String]
 importTests = mapMaybe ((fmap $ putTogether . noSlash . noExts) . dropDir)
@@ -48,27 +57,46 @@ importTests = mapMaybe ((fmap $ putTogether . noSlash . noExts) . dropDir)
 importTestsS :: [String] -> String
 importTestsS = unlines . importTests
 
-testsSection :: [String] -> [String]
-testsSection = mapMaybe ((fmap $ createTest . noSlash . noExts) . dropDir)
+testsSection :: String -> (String -> String) -> [String] -> [String]
+testsSection mainIs xform = mapMaybe ((fmap $ createTest mainIs xform . noSlash . noExts) . dropDir)
 
-testsSectionS :: [String] -> String
-testsSectionS = intercalate "\n  , " . testsSection
+testsSectionS :: String -> [String] -> String
+testsSectionS mainIs = testsSectionS' mainIs id
 
-testFile :: [String] -> String
-testFile tests = [qq|
+testsSectionS' :: String -> (String -> String) -> [String] -> String
+testsSectionS' mainIs xform = intercalate "\n  , " . testsSection mainIs xform
+
+testFile :: [String] -> [String] -> String
+testFile tests specs = [qq|
 module Main where
 
 import Test.Tasty as Tasty
+import Test.Tasty.Hspec as HSpec
 
 { importTestsS tests }
+{ importTestsS specs }
 
-allTests :: TestTree
-allTests = testGroup "all tests"
+tastyTestGroup :: TestTree
+tastyTestGroup = testGroup "tasty tests" tastyTests
+  where
+    tastyTests =
+      [
+        { testsSectionS ".tests" tests }
+      ]
+
+specTests :: [IO TestTree]
+specTests =
   [
-    { testsSectionS tests }
+    { testsSectionS' ".spec" specToTasty specs }
   ]
-main :: IO ()
-main = Tasty.defaultMain allTests
+
+main
+  :: IO ()
+main = do
+  specTrees <- sequence specTests
+  let
+    specTestGroup = testGroup "spec tests" specTrees
+  Tasty.defaultMain $ testGroup "all tests" [tastyTestGroup, specTestGroup]
 |]
 
 main = do

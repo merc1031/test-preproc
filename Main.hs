@@ -82,6 +82,9 @@ import Test.Tasty.Hspec as HSpec
 { importTestsS root tests }
 { importTestsS root specs }
 
+silenceRedundantImportWarnings :: Spec -> IO [TestTree]
+silenceRedundantImportWarnings = HSpec.testSpecs
+
 tastyTestGroup :: TestTree
 tastyTestGroup = testGroup "tasty tests" tastyTests
   where

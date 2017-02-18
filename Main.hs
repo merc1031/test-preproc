@@ -70,7 +70,7 @@ testsSectionS :: String -> String -> [String] -> String
 testsSectionS root mainIs = testsSectionS' root mainIs id
 
 testsSectionS' :: String -> String -> (String -> String) -> [String] -> String
-testsSectionS' root mainIs xform = intercalate "\n  , " . testsSection root mainIs xform
+testsSectionS' root mainIs xform = intercalate "\n    , " . testsSection root mainIs xform
 
 testFile :: String -> [String] -> [String] -> String
 testFile root tests specs = [qq|
@@ -86,18 +86,18 @@ silenceRedundantImportWarnings :: Spec -> IO [TestTree]
 silenceRedundantImportWarnings = HSpec.testSpecs
 
 tastyTestGroup :: TestTree
-tastyTestGroup = testGroup "tasty tests" tastyTests
-  where
-    tastyTests =
-      [
-        { testsSectionS root ".tests" tests }
-      ]
+tastyTestGroup = let
+  tastyTests =
+    [
+      { testsSectionS root ".tests" tests }
+    ]
+  in testGroup "tasty tests" tastyTests
 
 specTests :: [IO TestTree]
 specTests =
-  [
-    { testsSectionS' root ".spec" specToTasty specs }
-  ]
+    [
+      { testsSectionS' root ".spec" specToTasty specs }
+    ]
 
 main
   :: IO ()
